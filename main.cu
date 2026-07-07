@@ -16,6 +16,7 @@
 #include "voxel_grid.h"
 #include "camera.h"
 #include "window.h"
+#include "collision.h"
 #include "cuda_renderer.cuh"
 #include "imgui/imgui.h"
 #include "imgui_impl_x11.h"
@@ -220,7 +221,7 @@ int main() {
         ActForward, ActBackward, ActLeft, ActRight,
         ActUp, ActDown, ActScreenshot, ActCount
     };
-    static const char* actionNames[] = { "前进", "后退", "左移", "右移", "上升", "下降", "截图" };
+    static const char* actionNames[] = { "前进", "后退", "左移", "右移", "跳跃", "下降", "截图" };
     KeySym actionKeys[ActCount] = { XK_w, XK_s, XK_a, XK_d, XK_space, XK_Shift_L, XK_p };
     int waitingForAction = -1;
 
@@ -228,6 +229,30 @@ int main() {
 
     Camera rtCam(Vec3(GRID_X/2.0 - 8, 12, GRID_Z/2.0 - 20),
                  35, -12, fov, (double)RT_W / RT_H);
+
+    // === 玩家物理 ===
+    PlayerParams playerParams;
+    playerParams.eyeHeight = 1.6;
+    playerParams.height = 1.8;
+    playerParams.radius = 0.3;
+    playerParams.gravity = -25.0;
+    playerParams.jumpSpeed = 9.0;
+    PlayerCollider playerCollider(playerParams);
+    Vec3 playerFeetPos = rtCam.position() - Vec3(0, playerParams.eyeHeight, 0);
+    Vec3 playerVelocity(0, 0, 0);
+    bool onGround = false;
+    bool prevJump = false;
+    const double WALK_SPEED = 6.0;
+    const double MAX_DT = 0.05;
+
+    // 初始位置卡体素时自动弹射
+    if (playerCollider.collides(playerFeetPos, grid)) {
+        for (int i = 0; i < 20; i++) {
+            playerFeetPos = playerFeetPos + Vec3(0, 0.5, 0);
+            if (!playerCollider.collides(playerFeetPos, grid)) break;
+        }
+    }
+    rtCam.setPosition(playerFeetPos + Vec3(0, playerParams.eyeHeight, 0));
 
     // ===== 预分配 GPU 资源 (一次分配, 每帧复用) =====
     CudaResources gpuRes = cudaInitRenderer(
@@ -242,7 +267,6 @@ int main() {
     int frameCount = 0;
     double fps = 0;
 
-    const double MOVE_SPEED = 10.0;
     double renderMS = 0;
 
     auto lastTime = Clock::now();
@@ -286,32 +310,73 @@ int main() {
         prevEsc = nowEsc;
         ImGui_ImplX11_SetMenuActive(menuActive);
 
-        // === 游戏输入 (菜单关闭时) ===
-        Vec3 moveDelta(0, 0, 0);
+        // === 玩家物理 + 相机控制 (菜单关闭时) ===
         Vec3 fwd = rtCam.forward();
         Vec3 rgt = rtCam.right();
 
         if (!menuActive) {
+            if (dt > MAX_DT) dt = MAX_DT;
+
+            // === 水平移动输入 ===
+            Vec3 walkDir(0, 0, 0);
             if (win.isKeyDown(actionKeys[ActForward]))
-                moveDelta = moveDelta + Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
+                walkDir = walkDir + Vec3(fwd.x, 0, fwd.z).normalized();
             if (win.isKeyDown(actionKeys[ActBackward]))
-                moveDelta = moveDelta - Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
-            if (win.isKeyDown(actionKeys[ActLeft])) moveDelta = moveDelta - rgt * MOVE_SPEED * dt;
-            if (win.isKeyDown(actionKeys[ActRight])) moveDelta = moveDelta + rgt * MOVE_SPEED * dt;
-            if (win.isKeyDown(actionKeys[ActUp]))   moveDelta = moveDelta + Vec3(0, MOVE_SPEED * dt, 0);
-            if (win.isKeyDown(actionKeys[ActDown])) moveDelta = moveDelta - Vec3(0, MOVE_SPEED * dt, 0);
+                walkDir = walkDir - Vec3(fwd.x, 0, fwd.z).normalized();
+            if (win.isKeyDown(actionKeys[ActLeft]))
+                walkDir = walkDir - rgt;
+            if (win.isKeyDown(actionKeys[ActRight]))
+                walkDir = walkDir + rgt;
 
-            if (moveDelta.length() > 1e-6) {
-                rtCam.move(moveDelta);
-                lastMoveTime = Clock::now();
+            double walkLen = walkDir.length();
+            if (walkLen > 1e-6)
+                walkDir = walkDir * (1.0 / walkLen);
+
+            // === 跳跃 ===
+            bool nowJump = win.isKeyDown(actionKeys[ActUp]);
+            if (nowJump && !prevJump && onGround) {
+                playerVelocity.y = playerParams.jumpSpeed;
+                onGround = false;
+            }
+            prevJump = nowJump;
+
+            // === 重力 ===
+            if (!onGround)
+                playerVelocity.y += playerParams.gravity * dt;
+
+            // === 总位移 ===
+            Vec3 moveDelta = walkDir * WALK_SPEED * dt;
+            moveDelta.y = playerVelocity.y * dt;
+
+            // === 碰撞解析 ===
+            Vec3 newFeetPos = playerCollider.resolveMove(playerFeetPos, moveDelta, grid);
+
+            // === 地面检测 ===
+            if (playerVelocity.y <= 0) {
+                if (playerCollider.onGround(newFeetPos, grid)) {
+                    playerVelocity.y = 0;
+                    onGround = true;
+                    int feetBlockY = (int)std::floor(newFeetPos.y);
+                    if (grid.isSolid((int)std::floor(newFeetPos.x), feetBlockY,
+                                     (int)std::floor(newFeetPos.z)) ||
+                        grid.isSolid((int)std::floor(newFeetPos.x + playerParams.radius - 0.01), feetBlockY,
+                                     (int)std::floor(newFeetPos.z + playerParams.radius - 0.01))) {
+                        newFeetPos.y = feetBlockY + 1.0;
+                    }
+                }
+            } else if (playerVelocity.y > 0) {
+                Vec3 testUp = playerFeetPos + Vec3(0, moveDelta.y, 0);
+                Vec3 resolvedUp = playerCollider.resolveMove(playerFeetPos, Vec3(0, moveDelta.y, 0), grid);
+                if (resolvedUp.y < testUp.y - 0.001)
+                    playerVelocity.y = 0;
+                onGround = false;
             }
 
-            int mdx = win.mouseDX();
-            int mdy = win.mouseDY();
-            if (mdx != 0 || mdy != 0) {
-                rtCam.rotate(mdx * mouseSens, -mdy * mouseSens);
-                lastMoveTime = Clock::now();
-            }
+            // 更新玩家位置
+            bool feetMoved = (newFeetPos - playerFeetPos).length2() > 1e-10;
+            playerFeetPos = newFeetPos;
+            Vec3 newCamPos = playerFeetPos + Vec3(0, playerParams.eyeHeight, 0);
+            rtCam.setPosition(newCamPos);
 
             // 截图键
             static bool prevScreenshot = false;
@@ -327,6 +392,17 @@ int main() {
                 printf("Saved gpu_screenshot.ppm (%dx%d 16spp 3b)\n", WIN_W, WIN_H);
             }
             prevScreenshot = nowScreenshot;
+
+            // === 鼠标旋转 ===
+            int mdx = win.mouseDX();
+            int mdy = win.mouseDY();
+            if (mdx != 0 || mdy != 0) {
+                rtCam.rotate(mdx * mouseSens, -mdy * mouseSens);
+                lastMoveTime = Clock::now();
+            }
+
+            if (feetMoved || walkLen > 1e-6) {
+            }
         }
 
         // === 自适应渲染质量 ===
