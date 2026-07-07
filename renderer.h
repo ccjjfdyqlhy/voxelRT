@@ -97,7 +97,7 @@ private:
 
     static constexpr double AmbientIntensity = 0.50;
     static constexpr double SunIntensity = 3.00;
-    static constexpr double ShadowFill = 0.50;
+    static constexpr double ShadowFill = 0.25;
 
     Color trace(const Ray& ray, const VoxelGrid& grid,
                 const Vec3& sunDir, int depth, FastRNG& rng,

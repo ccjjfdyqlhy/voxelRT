@@ -317,9 +317,9 @@ __device__ CudaColor cuTrace(double ox, double oy, double oz,
     double shadOx = hx + N.x * 1e-3;
     double shadOy = hy + N.y * 1e-3;
     double shadOz = hz + N.z * 1e-3;
-    bool inShadow = grid.isOccluded(shadOx, shadOy, shadOz,
-                                    toSun.x, toSun.y, toSun.z, 200.0);
-    double shadowFactor = inShadow ? 0.50 : 1.0;
+    bool inShadow = grid.isOccluded(shadOx, shadOy, shadOz, toSun.x, toSun.y, toSun.z, 200.0);
+
+    double shadowFactor = inShadow ? 0.25 : 1.0;
 
     // Direct
     CudaColor direct(0, 0, 0);

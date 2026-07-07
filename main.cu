@@ -37,36 +37,36 @@ void buildScene(VoxelGrid& grid) {
             grid.set(x + hw, 0, z + hz, VoxelType::Grass);
 
     FastRNG rng(42);
-    for (int i = 0; i < 30; i++) {
-        int x = int(rng.next() * (hw*2-4) - hw + 2);
-        int z = int(rng.next() * (hz*2-4) - hz + 2);
+    for (int i = 0; i < 60; i++) {
+        int x = int(rng.next() * (hw*2-8) - hw + 4);
+        int z = int(rng.next() * (hz*2-8) - hz + 4);
         grid.set(x + hw, 1, z + hz, VoxelType::Dirt);
     }
 
     int cx = grid.dimX() / 2, cz = grid.dimZ() / 2;
-    for (int y = 0; y < 7; y++)
-        for (int x = -2; x <= 2; x++)
-            for (int z = -2; z <= 2; z++)
+    for (int y = 0; y < 14; y++)
+        for (int x = -4; x <= 4; x++)
+            for (int z = -4; z <= 4; z++)
                 grid.set(cx + x, y + 1, cz + z, VoxelType::Stone);
 
-    for (int x = -1; x <= 1; x++)
-        for (int z = -1; z <= 1; z++)
-            grid.set(cx + x, 8, cz + z, VoxelType::GlowStone);
+    for (int x = -2; x <= 2; x++)
+        for (int z = -2; z <= 2; z++)
+            grid.set(cx + x, 16, cz + z, VoxelType::GlowStone);
 
     for (int i = 0; i < 4; i++) {
         double ang = i * M_PI / 2.0;
-        int px = cx + int(7 * std::cos(ang));
-        int pz = cz + int(7 * std::sin(ang));
-        for (int y = 0; y < 5; y++)
+        int px = cx + int(14 * std::cos(ang));
+        int pz = cz + int(14 * std::sin(ang));
+        for (int y = 0; y < 10; y++)
             grid.set(px, y + 1, pz, VoxelType::Metal);
-        grid.set(px, 6, pz, VoxelType::GlowStone);
+        grid.set(px, 12, pz, VoxelType::GlowStone);
     }
 
-    for (int i = 0; i < 5; i++) {
-        int bx = int(rng.next() * (hw-4) - hw/2 + 2);
-        int bz = int(rng.next() * (hz-4) - hz/2 + 2);
-        int bh = 2 + int(rng.next() * 2);
-        int bw = 1 + int(rng.next() * 2);
+    for (int i = 0; i < 10; i++) {
+        int bx = int(rng.next() * (hw-8) - hw/2 + 4);
+        int bz = int(rng.next() * (hz-8) - hz/2 + 4);
+        int bh = 4 + int(rng.next() * 4);
+        int bw = 2 + int(rng.next() * 4);
         for (int y = 0; y < bh; y++)
             for (int x = -bw; x <= bw; x++)
                 for (int z = -bw; z <= bw; z++)
@@ -76,24 +76,25 @@ void buildScene(VoxelGrid& grid) {
     }
 
     // 玻璃方块 (塔前)
-    for (int y = 0; y < 4; y++)
-        for (int x = -2; x <= 1; x++)
-            for (int z = -3; z <= -1; z++)
-                grid.set(cx + x + 6, y + 3, cz + z, VoxelType::Crystal);
+    for (int y = 0; y < 8; y++)
+        for (int x = -4; x <= 2; x++)
+            for (int z = -6; z <= -2; z++)
+                grid.set(cx + x + 12, y + 6, cz + z, VoxelType::Crystal);
 
-    int wx = grid.dimX() / 2 - 2;
-    int wz = grid.dimZ() / 2 - 2;
+    int wx = grid.dimX() / 2 - 4;
+    int wz = grid.dimZ() / 2 - 4;
+    int wh = 8;
     for (int x = -wx; x < wx; x++)
-        for (int y = 0; y < 4; y++)
+        for (int y = 0; y < wh; y++)
             grid.set(x + hw, y + 1, 0, VoxelType::Stone);
     for (int z = -wz; z < wz; z++)
-        for (int y = 0; y < 4; y++)
+        for (int y = 0; y < wh; y++)
             grid.set(0, y + 1, z + hz, VoxelType::Stone);
     for (int x = -wx; x < wx; x++)
-        for (int y = 0; y < 4; y++)
+        for (int y = 0; y < wh; y++)
             grid.set(x + hw, y + 1, grid.dimZ()-1, VoxelType::Stone);
     for (int z = -wz; z < wz; z++)
-        for (int y = 0; y < 4; y++)
+        for (int y = 0; y < wh; y++)
             grid.set(grid.dimX()-1, y + 1, z + hz, VoxelType::Stone);
 }
 
@@ -121,7 +122,7 @@ int main() {
     cudaGetDeviceProperties(&prop, dev);
     printf("CUDA device: %s\n", prop.name);
 
-    const int GRID_X = 48, GRID_Y = 32, GRID_Z = 48;
+    const int GRID_X = 96, GRID_Y = 64, GRID_Z = 96;
 
     // 构建场景
     VoxelGrid grid(GRID_X, GRID_Y, GRID_Z);
@@ -140,7 +141,7 @@ int main() {
 
     // ===== 测试渲染 =====
     const int TEST_W = 320, TEST_H = 240;
-    Camera testCam(Vec3(GRID_X/2.0 - 4, 6, GRID_Z/2.0 - 10),
+    Camera testCam(Vec3(GRID_X/2.0 - 8, 12, GRID_Z/2.0 - 20),
                    35, -12, 60, (double)TEST_W / TEST_H);
 
     printf("GPU rendering test %dx%d 4spp 2bounces...\n", TEST_W, TEST_H);
@@ -175,7 +176,7 @@ int main() {
     WindowX11 win(WIN_W, WIN_H, "Voxel RT (CUDA)");
     if (!win.isRunning()) return 0;
 
-    Camera rtCam(Vec3(GRID_X/2.0 - 4, 6, GRID_Z/2.0 - 10),
+    Camera rtCam(Vec3(GRID_X/2.0 - 8, 12, GRID_Z/2.0 - 20),
                  35, -12, 60, (double)RT_W / RT_H);
 
     // ===== 预分配 GPU 资源 (一次分配, 每帧复用) =====
@@ -191,7 +192,7 @@ int main() {
     int frameCount = 0;
     double fps = 0;
 
-    const double MOVE_SPEED = 5.0;
+    const double MOVE_SPEED = 10.0;
     const double MOUSE_SENS = 0.15;
     double renderMS = 0;
 
