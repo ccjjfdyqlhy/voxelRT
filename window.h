@@ -10,9 +10,12 @@
 #include <sys/ipc.h>
 #include <cstring>
 #include <cstdio>
+#include <unordered_set>
 
 class WindowX11 {
 public:
+    using EventCallback = bool (*)(void*);
+
     WindowX11(int w, int h, const char* title = "Voxel Ray Tracer")
         : width_(w), height_(h), running_(true)
     {
@@ -58,7 +61,7 @@ public:
         createShmImage(w, h);
 
         // 初始化键盘状态
-        memset(keys_, 0, sizeof(keys_));
+        keys_.clear();
 
         // 鼠标状态
         mouseDX_ = mouseDY_ = 0;
@@ -86,6 +89,9 @@ public:
             XEvent ev;
             XNextEvent(display_, &ev);
 
+            if (eventCallback_ && eventCallback_(&ev))
+                continue;
+
             switch (ev.type) {
             case Expose:
                 if (ev.xexpose.count == 0) needsRedraw_ = true;
@@ -93,10 +99,8 @@ public:
 
             case KeyPress: {
                 KeySym ks = XLookupKeysym(&ev.xkey, 0);
-                unsigned int kc = (unsigned int)ks;
-                if (kc < 256) keys_[kc] = 1;
+                keys_.insert((unsigned int)ks);
                 if (ks == XK_Shift_L || ks == XK_Shift_R) shiftPressed_ = true;
-                if (ks == XK_Escape) running_ = false;
                 break;
             }
             case KeyRelease: {
@@ -111,13 +115,12 @@ public:
                     }
                 }
                 KeySym ks = XLookupKeysym(&ev.xkey, 0);
-                unsigned int kc = (unsigned int)ks;
-                if (kc < 256) keys_[kc] = 0;
+                keys_.erase((unsigned int)ks);
                 if (ks == XK_Shift_L || ks == XK_Shift_R) shiftPressed_ = false;
                 break;
             }
             case ButtonPress:
-                if (ev.xbutton.button == Button1) {
+                if (ev.xbutton.button == Button1 && autoGrab_) {
                     grabMouse();
                 }
                 break;
@@ -155,9 +158,11 @@ public:
     bool isRunning() const { return running_; }
     int width() const { return width_; }
     int height() const { return height_; }
+    Display* display() const { return display_; }
+    unsigned long xwindow() const { return win_; }
 
     bool isKeyDown(KeySym ks) const {
-        return ks < 256 && keys_[(unsigned int)ks];
+        return keys_.find((unsigned int)ks) != keys_.end();
     }
 
     bool isShiftDown() const { return shiftPressed_; }
@@ -191,6 +196,15 @@ public:
     void flush() { XFlush(display_); }
 
     int fontHeight() const { return font_ ? (font_->ascent + font_->descent) : 16; }
+
+    void setEventCallback(EventCallback cb) { eventCallback_ = cb; }
+    void setAutoGrab(bool enabled) { autoGrab_ = enabled; }
+    void ungrabMouse() {
+        if (mouseGrabbed_) {
+            XUngrabPointer(display_, CurrentTime);
+            mouseGrabbed_ = false;
+        }
+    }
 
 private:
     void createShmImage(int w, int h) {
@@ -266,10 +280,12 @@ private:
     bool running_;
     bool needsRedraw_ = false;
 
-    unsigned char keys_[256];
+    std::unordered_set<unsigned int> keys_;
     bool shiftPressed_ = false;
     int mouseDX_, mouseDY_;
     bool mouseGrabbed_;
+    bool autoGrab_ = true;
+    EventCallback eventCallback_ = nullptr;
 };
 
 #endif // WINDOW_H

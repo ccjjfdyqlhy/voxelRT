@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cmath>
+#include <cstring>
 #include <chrono>
 #include <vector>
 #include <fstream>
@@ -16,6 +17,9 @@
 #include "camera.h"
 #include "window.h"
 #include "cuda_renderer.cuh"
+#include "imgui/imgui.h"
+#include "imgui_impl_x11.h"
+#include "imgui_impl_fb.h"
 
 // ============ 场景构建 (复现 main.cpp) ============
 struct FastRNG {
@@ -197,53 +201,88 @@ int main() {
     double renderMS = 0;
 
     auto lastTime = Clock::now();
+    auto lastFrameTime = Clock::now();
+    char titleBuf[128];
 
-    while (win.isRunning()) {
+    // ===== ImGui 初始化 =====
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.LogFilename = nullptr;
+    ImGui::StyleColorsDark();
+
+    // 加载中文字体
+    io.Fonts->AddFontFromFileTTF("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                                 18.0f, nullptr, io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+
+    ImGui_ImplX11_Init(&win);
+    ImGui_ImplFB_Init(WIN_W, WIN_H, win.framebuffer());
+    ImGui::GetStyle().WindowRounding = 4.0f;
+    ImGui::GetStyle().WindowTitleAlign = ImVec2(0.5f, 0.5f);
+    win.setEventCallback(ImGui_ImplX11_ProcessEvent);
+
+    bool menuActive = false;
+    bool prevEsc = false;
+    bool quitRequested = false;
+
+    while (win.isRunning() && !quitRequested) {
         win.processEvents();
-
         auto now = Clock::now();
         double dt = std::chrono::duration<double>(now - lastTime).count();
         lastTime = now;
 
+        // === ESC 切换菜单 ===
+        bool nowEsc = win.isKeyDown(XK_Escape);
+        if (nowEsc && !prevEsc) {
+            menuActive = !menuActive;
+            if (menuActive) win.ungrabMouse();
+        }
+        prevEsc = nowEsc;
+        ImGui_ImplX11_SetMenuActive(menuActive);
+
+        // === 游戏输入 (菜单关闭时) ===
         Vec3 moveDelta(0, 0, 0);
         Vec3 fwd = rtCam.forward();
         Vec3 rgt = rtCam.right();
 
-        if (win.isKeyDown(XK_w))
-            moveDelta = moveDelta + Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
-        if (win.isKeyDown(XK_s))
-            moveDelta = moveDelta - Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
-        if (win.isKeyDown(XK_a)) moveDelta = moveDelta - rgt * MOVE_SPEED * dt;
-        if (win.isKeyDown(XK_d)) moveDelta = moveDelta + rgt * MOVE_SPEED * dt;
-        if (win.isKeyDown(XK_space))   moveDelta = moveDelta + Vec3(0, MOVE_SPEED * dt, 0);
-        if (win.isShiftDown())         moveDelta = moveDelta - Vec3(0, MOVE_SPEED * dt, 0);
+        if (!menuActive) {
+            if (win.isKeyDown(XK_w))
+                moveDelta = moveDelta + Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
+            if (win.isKeyDown(XK_s))
+                moveDelta = moveDelta - Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
+            if (win.isKeyDown(XK_a)) moveDelta = moveDelta - rgt * MOVE_SPEED * dt;
+            if (win.isKeyDown(XK_d)) moveDelta = moveDelta + rgt * MOVE_SPEED * dt;
+            if (win.isKeyDown(XK_space))   moveDelta = moveDelta + Vec3(0, MOVE_SPEED * dt, 0);
+            if (win.isShiftDown())         moveDelta = moveDelta - Vec3(0, MOVE_SPEED * dt, 0);
 
-        if (moveDelta.length() > 1e-6) {
-            rtCam.move(moveDelta);
-            lastMoveTime = Clock::now();
-        }
+            if (moveDelta.length() > 1e-6) {
+                rtCam.move(moveDelta);
+                lastMoveTime = Clock::now();
+            }
 
-        int mdx = win.mouseDX();
-        int mdy = win.mouseDY();
-        if (mdx != 0 || mdy != 0) {
-            rtCam.rotate(mdx * MOUSE_SENS, -mdy * MOUSE_SENS);
-            lastMoveTime = Clock::now();
-        }
+            int mdx = win.mouseDX();
+            int mdy = win.mouseDY();
+            if (mdx != 0 || mdy != 0) {
+                rtCam.rotate(mdx * MOUSE_SENS, -mdy * MOUSE_SENS);
+                lastMoveTime = Clock::now();
+            }
 
-        // P 键保存截图
-        static bool prevP = false;
-        bool nowP = win.isKeyDown(XK_p);
-        if (nowP && !prevP) {
-            std::vector<CudaColor> ssBuf(WIN_W * WIN_H);
-            cudaRender(h_gridData.data(), GRID_X, GRID_Y, GRID_Z,
-                       rtCam.position().x, rtCam.position().y, rtCam.position().z,
-                       rtCam.yaw(), rtCam.pitch(), 60, (double)WIN_W / WIN_H,
-                       sunX, sunY, sunZ,
-                       WIN_W, WIN_H, 16, 3, ssBuf.data());
-            savePPM(ssBuf, WIN_W, WIN_H, "gpu_screenshot.ppm");
-            printf("Saved gpu_screenshot.ppm (%dx%d 16spp 3b)\n", WIN_W, WIN_H);
+            // P 键保存截图
+            static bool prevP = false;
+            bool nowP = win.isKeyDown(XK_p);
+            if (nowP && !prevP) {
+                std::vector<CudaColor> ssBuf(WIN_W * WIN_H);
+                cudaRender(h_gridData.data(), GRID_X, GRID_Y, GRID_Z,
+                           rtCam.position().x, rtCam.position().y, rtCam.position().z,
+                           rtCam.yaw(), rtCam.pitch(), 60, (double)WIN_W / WIN_H,
+                           sunX, sunY, sunZ,
+                           WIN_W, WIN_H, 16, 3, ssBuf.data());
+                savePPM(ssBuf, WIN_W, WIN_H, "gpu_screenshot.ppm");
+                printf("Saved gpu_screenshot.ppm (%dx%d 16spp 3b)\n", WIN_W, WIN_H);
+            }
+            prevP = nowP;
         }
-        prevP = nowP;
 
         // === 自适应渲染质量 ===
         double idleSec = std::chrono::duration<double>(Clock::now() - lastMoveTime).count();
@@ -281,6 +320,50 @@ int main() {
                 fb[idx + 3] = 0;
             }
         }
+
+        // === ImGui 渲染 ===
+        ImGui_ImplFB_UpdateFramebuffer(WIN_W, WIN_H, win.framebuffer());
+        ImGui_ImplX11_NewFrame();
+        ImGui_ImplFB_NewFrame();
+        ImGui::NewFrame();
+
+        if (menuActive) {
+            ImGui::SetNextWindowPos(ImVec2(WIN_W * 0.5f, WIN_H * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowSize(ImVec2(360, 320), ImGuiCond_Always);
+            ImGui::Begin("暂停", nullptr,
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+
+            float winW = ImGui::GetWindowWidth();
+            ImGui::SetCursorPosX((winW - 100) * 0.5f);
+            ImGui::Text("=== 菜单 ===");
+            ImGui::Spacing(); ImGui::Spacing(); ImGui::Spacing();
+
+            float btnW = 200;
+            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+            if (ImGui::Button("回到场景", ImVec2(btnW, 40))) {
+                menuActive = false;
+            }
+            ImGui::Spacing();
+            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+            if (ImGui::Button("图形选项", ImVec2(btnW, 40))) {
+            }
+            ImGui::Spacing();
+            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+            if (ImGui::Button("键位配置", ImVec2(btnW, 40))) {
+            }
+            ImGui::Spacing();
+            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+            if (ImGui::Button("退出", ImVec2(btnW, 40))) {
+                quitRequested = true;
+            }
+
+            ImGui::End();
+        }
+
+        ImGui::Render();
+        ImGui_ImplFB_RenderDrawData(ImGui::GetDrawData());
+
         win.present();
 
         // Overlay
@@ -290,7 +373,7 @@ int main() {
                       "FPS: %.1f | %dx%d | %dspp %db | GPU",
                       fps, RT_W, RT_H, spp, bounces);
         std::snprintf(line2, sizeof(line2),
-                      "IDLE: %.1fs | %.1fms/frame | P:Save PPM | ESC:Quit",
+                      "IDLE: %.1fs | %.1fms/frame | P:Save PPM | ESC:Menu",
                       idleSec, renderMS);
         win.drawText(10, fh + 4, line1, 0x00CCFF66);
         win.drawText(10, fh * 2 + 8, line2, 0x00CCCCCC);
@@ -300,20 +383,23 @@ int main() {
 
         // FPS
         double elapsed = std::chrono::duration<double>(Clock::now() - lastFPSTime).count();
-        if (elapsed > 1.0) {
+        if (elapsed > 0.5) {
             fps = frameCount / elapsed;
-            char title[128];
-            std::snprintf(title, sizeof(title),
-                          "Voxel RT (CUDA) | %dx%d %dspp %db | %.1f FPS | %s",
-                          RT_W, RT_H, spp, bounces, fps,
-                          win.isMouseGrabbed() ? "ESC to quit" : "Click to grab");
-            win.setTitle(title);
+            std::snprintf(titleBuf, sizeof(titleBuf),
+                          "Voxel RT (CUDA) | %dx%d %dspp %db | %.1f FPS",
+                          RT_W, RT_H, spp, bounces, fps);
+            win.setTitle(titleBuf);
             frameCount = 0;
             lastFPSTime = Clock::now();
         }
+
+        lastFrameTime = Clock::now();
     }
 
-    // ===== 清理 GPU 资源 =====
+    // ===== 清理 =====
+    ImGui_ImplFB_Shutdown();
+    ImGui_ImplX11_Shutdown();
+    ImGui::DestroyContext();
     cudaDestroyRenderer(gpuRes);
     return 0;
 }

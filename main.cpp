@@ -11,6 +11,9 @@
 #include "camera.h"
 #include "renderer.h"
 #include "window.h"
+#include "imgui/imgui.h"
+#include "imgui_impl_x11.h"
+#include "imgui_impl_fb.h"
 
 // ============ 场景构建 ============
 
@@ -242,60 +245,94 @@ int main() {
 
     auto lastTime = Clock::now();
 
-    // 暖机
-    (void)0;
+    // ===== ImGui 初始化 =====
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO();
+    io.IniFilename = nullptr;
+    io.LogFilename = nullptr;
+    ImGui::StyleColorsDark();
 
-    while (win.isRunning()) {
+    // 加载中文字体
+    io.Fonts->AddFontFromFileTTF("/usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc",
+                                 18.0f, nullptr, io.Fonts->GetGlyphRangesChineseSimplifiedCommon());
+
+    ImGui_ImplX11_Init(&win);
+    ImGui_ImplFB_Init(WIN_W, WIN_H, win.framebuffer());
+    ImGui::GetStyle().WindowRounding = 4.0f;
+    ImGui::GetStyle().WindowTitleAlign = ImVec2(0.5f, 0.5f);
+    win.setEventCallback(ImGui_ImplX11_ProcessEvent);
+
+    bool menuActive = false;
+    bool prevEsc = false;
+    bool quitRequested = false;
+    char titleBuf[128];
+
+    bool sceneRendered = false;
+
+    while (win.isRunning() && !quitRequested) {
         win.processEvents();
 
         auto now = Clock::now();
         double dt = std::chrono::duration<double>(now - lastTime).count();
         lastTime = now;
 
-        // === 相机控制 ===
+        // === ESC 切换菜单 ===
+        bool nowEsc = win.isKeyDown(XK_Escape);
+        if (nowEsc && !prevEsc) {
+            menuActive = !menuActive;
+            if (menuActive) win.ungrabMouse();
+        }
+        prevEsc = nowEsc;
+        ImGui_ImplX11_SetMenuActive(menuActive);
+
+        // === 相机控制 (菜单关闭时) ===
         bool cameraMoved = false;
         Vec3 moveDelta(0, 0, 0);
         Vec3 fwd = rtCam.forward();
         Vec3 rgt = rtCam.right();
 
-        if (win.isKeyDown(XK_w))
-            moveDelta = moveDelta + Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
-        if (win.isKeyDown(XK_s))
-            moveDelta = moveDelta - Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
-        if (win.isKeyDown(XK_a)) moveDelta = moveDelta - rgt * MOVE_SPEED * dt;
-        if (win.isKeyDown(XK_d)) moveDelta = moveDelta + rgt * MOVE_SPEED * dt;
-        if (win.isKeyDown(XK_space))   moveDelta = moveDelta + Vec3(0, MOVE_SPEED * dt, 0);
-        if (win.isShiftDown())         moveDelta = moveDelta - Vec3(0, MOVE_SPEED * dt, 0);
+        if (!menuActive) {
+            if (win.isKeyDown(XK_w))
+                moveDelta = moveDelta + Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
+            if (win.isKeyDown(XK_s))
+                moveDelta = moveDelta - Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
+            if (win.isKeyDown(XK_a)) moveDelta = moveDelta - rgt * MOVE_SPEED * dt;
+            if (win.isKeyDown(XK_d)) moveDelta = moveDelta + rgt * MOVE_SPEED * dt;
+            if (win.isKeyDown(XK_space))   moveDelta = moveDelta + Vec3(0, MOVE_SPEED * dt, 0);
+            if (win.isShiftDown())         moveDelta = moveDelta - Vec3(0, MOVE_SPEED * dt, 0);
 
-        // P 键保存 PPM
-        static bool prevP = false;
-        bool nowP = win.isKeyDown(XK_p);
-        if (nowP && !prevP) {
-            std::vector<Color> saveBuf;
-            Camera saveCam(rtCam.position(), rtCam.yaw(), rtCam.pitch(),
-                           60, (double)WIN_W / WIN_H);
-            Renderer saveRenderer(WIN_W, WIN_H, 8, 2);
-            saveRenderer.render(saveCam, grid, saveBuf);
-            savePPM(saveBuf, WIN_W, WIN_H, "screenshot.ppm");
-            printf("Saved screenshot.ppm (%dx%d, 8spp)\n", WIN_W, WIN_H);
-        }
-        prevP = nowP;
+            // P 键保存 PPM
+            static bool prevP = false;
+            bool nowP = win.isKeyDown(XK_p);
+            if (nowP && !prevP) {
+                std::vector<Color> saveBuf;
+                Camera saveCam(rtCam.position(), rtCam.yaw(), rtCam.pitch(),
+                               60, (double)WIN_W / WIN_H);
+                Renderer saveRenderer(WIN_W, WIN_H, 8, 2);
+                saveRenderer.render(saveCam, grid, saveBuf);
+                savePPM(saveBuf, WIN_W, WIN_H, "screenshot.ppm");
+                printf("Saved screenshot.ppm (%dx%d, 8spp)\n", WIN_W, WIN_H);
+            }
+            prevP = nowP;
 
-        if (moveDelta.length() > 1e-6) {
-            rtCam.move(moveDelta);
-            cameraMoved = true;
-            lastMoveTime = Clock::now();
-        }
+            if (moveDelta.length() > 1e-6) {
+                rtCam.move(moveDelta);
+                cameraMoved = true;
+                lastMoveTime = Clock::now();
+            }
 
-        int mdx = win.mouseDX();
-        int mdy = win.mouseDY();
-        if (mdx != 0 || mdy != 0) {
-            rtCam.rotate(mdx * MOUSE_SENS, -mdy * MOUSE_SENS);
-            cameraMoved = true;
-            lastMoveTime = Clock::now();
+            int mdx = win.mouseDX();
+            int mdy = win.mouseDY();
+            if (mdx != 0 || mdy != 0) {
+                rtCam.rotate(mdx * MOUSE_SENS, -mdy * MOUSE_SENS);
+                cameraMoved = true;
+                lastMoveTime = Clock::now();
+            }
         }
 
         // === 渲染决策 ===
+        sceneRendered = false;
         double idleSec = std::chrono::duration<double>(Clock::now() - lastMoveTime).count();
         bool doFull = (firstFrame) || (idleSec > 0.3 && !cameraMoved);
 
@@ -319,31 +356,80 @@ int main() {
                                 (unsigned char*)win.framebuffer(), WIN_W, WIN_H);
             }
 
-            win.present();
             frameCount++;
+            sceneRendered = true;
+        }
+
+        // === ImGui 渲染 ===
+        ImGui_ImplFB_UpdateFramebuffer(WIN_W, WIN_H, win.framebuffer());
+        ImGui_ImplX11_NewFrame();
+        ImGui_ImplFB_NewFrame();
+        ImGui::NewFrame();
+
+        if (menuActive) {
+            ImGui::SetNextWindowPos(ImVec2(WIN_W * 0.5f, WIN_H * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
+            ImGui::SetNextWindowSize(ImVec2(360, 320), ImGuiCond_Always);
+            ImGui::Begin("暂停", nullptr,
+                         ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
+                         ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
+
+            float winW = ImGui::GetWindowWidth();
+            ImGui::SetCursorPosX((winW - 100) * 0.5f);
+            ImGui::Text("=== 菜单 ===");
+            ImGui::Spacing(); ImGui::Spacing(); ImGui::Spacing();
+
+            float btnW = 200;
+            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+            if (ImGui::Button("回到场景", ImVec2(btnW, 40))) {
+                menuActive = false;
+            }
+            ImGui::Spacing();
+            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+            if (ImGui::Button("图形选项", ImVec2(btnW, 40))) {
+            }
+            ImGui::Spacing();
+            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+            if (ImGui::Button("键位配置", ImVec2(btnW, 40))) {
+            }
+            ImGui::Spacing();
+            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+            if (ImGui::Button("退出", ImVec2(btnW, 40))) {
+                quitRequested = true;
+            }
+
+            ImGui::End();
+        }
+
+        ImGui::Render();
+        ImGui_ImplFB_RenderDrawData(ImGui::GetDrawData());
+
+        // === 显示 ===
+        if (sceneRendered || menuActive) {
+            win.present();
         }
 
         // === FPS 更新 ===
         double elapsed = std::chrono::duration<double>(Clock::now() - lastFPSTime).count();
         if (elapsed > 1.0) {
             fps = frameCount / elapsed;
-            char title[128];
-            std::snprintf(title, sizeof(title),
-                          "Voxel RT | %s | %.1f FPS | %s",
-                          fullQuality ? "FULL 4spp" : "FAST 1spp",
-                          fps,
-                          win.isMouseGrabbed() ? "ESC to quit" : "Click to grab");
-            win.setTitle(title);
+            std::snprintf(titleBuf, sizeof(titleBuf),
+                          "Voxel RT | %s | %.1f FPS",
+                          fullQuality ? "FULL 4spp" : "FAST 1spp", fps);
+            win.setTitle(titleBuf);
             frameCount = 0;
             lastFPSTime = Clock::now();
         }
 
-        // 空闲时降低 CPU 占用
-        if (!cameraMoved && !doFull && elapsed < 1.0) {
-            struct timespec ts = {0, 8000000};  // 8ms
+        if (!menuActive && !cameraMoved && !doFull && elapsed < 1.0) {
+            struct timespec ts = {0, 8000000};
             nanosleep(&ts, nullptr);
         }
     }
+
+    // ===== 清理 ImGui =====
+    ImGui_ImplFB_Shutdown();
+    ImGui_ImplX11_Shutdown();
+    ImGui::DestroyContext();
 
     return 0;
 }
