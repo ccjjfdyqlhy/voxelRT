@@ -343,6 +343,8 @@ int main() {
             ImGui::SetCursorPosX((winW - btnW) * 0.5f);
             if (ImGui::Button("回到场景", ImVec2(btnW, 40))) {
                 menuActive = false;
+                ImGui_ImplX11_SetMenuActive(false);
+                win.grabMouse();
             }
             ImGui::Spacing();
             ImGui::SetCursorPosX((winW - btnW) * 0.5f);
