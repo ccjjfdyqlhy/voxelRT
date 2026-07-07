@@ -407,6 +407,7 @@ int main() {
                     menuPage = 0;
                     ImGui_ImplX11_SetMenuActive(false);
                     win.grabMouse();
+                    lastMoveTime = Clock::now() - std::chrono::seconds(10);
                 }
                 ImGui::Spacing();
                 ImGui::SetCursorPosX((winW - btnW) * 0.5f);

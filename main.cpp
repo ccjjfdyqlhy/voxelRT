@@ -264,6 +264,7 @@ int main() {
     int waitingForAction = -1;
 
     int menuPage = 0;
+    bool forceRender = false;
 
     // 相机 (初始在塔前方上空)
     Camera rtCam(Vec3(GRID_X/2.0 - 8, 12, GRID_Z/2.0 - 20),
@@ -378,6 +379,12 @@ int main() {
             }
         }
 
+        // === 强制重绘 (设置变更后) ===
+        if (forceRender) {
+            cameraMoved = true;
+            forceRender = false;
+        }
+
         // === 渲染决策 ===
         sceneRendered = false;
         double idleSec = std::chrono::duration<double>(Clock::now() - lastMoveTime).count();
@@ -448,6 +455,8 @@ int main() {
                     menuPage = 0;
                     ImGui_ImplX11_SetMenuActive(false);
                     win.grabMouse();
+                    forceRender = true;
+                    lastMoveTime = Clock::now() - std::chrono::seconds(10);
                 }
                 ImGui::Spacing();
                 ImGui::SetCursorPosX((winW - btnW) * 0.5f);
@@ -473,6 +482,7 @@ int main() {
                 ImGui::SetNextItemWidth(winW - 40);
                 if (ImGui::SliderFloat("视野 (FOV)", &fov, 30, 120, "%.0f°")) {
                     rtCam.setFov(fov);
+                    forceRender = true;
                 }
 
                 ImGui::SetCursorPosX(20);
@@ -483,12 +493,14 @@ int main() {
                 ImGui::SetNextItemWidth(winW - 40);
                 if (ImGui::SliderInt("采样数 (SPP)", &fullSpp, 1, 8)) {
                     fullRenderer.setSamples(fullSpp);
+                    forceRender = true;
                 }
 
                 ImGui::SetCursorPosX(20);
                 ImGui::SetNextItemWidth(winW - 40);
                 if (ImGui::SliderInt("最大弹射次数", &fullBounces, 0, 4)) {
                     fullRenderer.setMaxBounces(fullBounces);
+                    forceRender = true;
                 }
 
                 ImGui::Spacing(); ImGui::Spacing();
