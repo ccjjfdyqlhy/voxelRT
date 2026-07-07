@@ -29,12 +29,14 @@ struct FastRNG {
     }
 
     Vec3 vec3InUnitSphere() {
-        double u = next(), v = next(), w = next();
-        double theta = shader_math::TAU * u;
-        double phi = std::acos(2.0 * v - 1.0);
-        return Vec3(std::sin(phi) * std::cos(theta),
-                    std::sin(phi) * std::sin(theta),
-                    std::cos(phi));
+        while (true) {
+            double x = 2.0 * next() - 1.0;
+            double y = 2.0 * next() - 1.0;
+            double z = 2.0 * next() - 1.0;
+            double len2 = x*x + y*y + z*z;
+            if (len2 < 1.0 && len2 > 1e-16)
+                return Vec3(x, y, z) / std::sqrt(len2);
+        }
     }
 };
 
@@ -59,15 +61,13 @@ public:
 
         #pragma omp parallel
         {
-            FastRNG rng_base(42);
+            FastRNG rng(42);
+            rng.state += uint64_t(omp_get_thread_num()) * 6364136223846793005ull;
 
             #pragma omp for
             for (int j = 0; j < h_; j++) {
                 for (int i = 0; i < w_; i++) {
                     Color accumulated(0, 0, 0);
-                    FastRNG rng = rng_base;
-                    // 每个线程独立 RNG 序列
-                    rng.state += uint64_t(omp_get_thread_num()) * 6364136223846793005ull;
                     for (int s = 0; s < samples_; s++) {
                         double u = (i + rng.next()) / w_;
                         double v = 1.0 - (j + rng.next()) / h_;

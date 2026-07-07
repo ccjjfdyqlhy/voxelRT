@@ -87,16 +87,12 @@ public:
                         set(x, y, z, t);
     }
 
-    // DDA 体素 raycast — 返回 VoxelType + hitPos + normal
-    bool raycast(const Ray& ray, double maxDist,
-                 Vec3& hitPos, Vec3& normal, VoxelType& hitType,
-                 int maxSteps = 200) const {
-        double ox = ray.origin.x;
-        double oy = ray.origin.y;
-        double oz = ray.origin.z;
-        double dx = ray.dir.x;
-        double dy = ray.dir.y;
-        double dz = ray.dir.z;
+    // DDA 遍历核心模板 — 被 raycast & isOccluded 复用
+    // F: (ix, iy, iz, nx, ny, nz, t) -> bool, true=stop
+    template<typename F>
+    bool ddaWalk(const Ray& ray, double maxDist, int maxSteps, F&& onVoxel) const {
+        double ox = ray.origin.x, oy = ray.origin.y, oz = ray.origin.z;
+        double dx = ray.dir.x, dy = ray.dir.y, dz = ray.dir.z;
 
         int ix = int(std::floor(ox));
         int iy = int(std::floor(oy));
@@ -146,24 +142,16 @@ public:
             tDeltaZ = 1e30; tMaxZ = 1e30;
         }
 
-        int steps = 0;
         int nx = 0, ny = 0, nz = 0;
         double t = 0.0;
 
-        while (steps < maxSteps) {
-            steps++;
-
+        for (int steps = 0; steps < maxSteps; steps++) {
             if (ix >= 0 && ix < sx && iy >= 0 && iy < sy && iz >= 0 && iz < sz) {
-                VoxelType vt = data_[idx(ix, iy, iz)];
-                if (isActive(vt)) {
-                    hitPos = Vec3(double(ix) + 0.5, double(iy) + 0.5, double(iz) + 0.5);
-                    normal = Vec3(double(nx), double(ny), double(nz));
-                    hitType = vt;
-                    return true;
+                if (isActive(data_[idx(ix, iy, iz)])) {
+                    if (onVoxel(ix, iy, iz, nx, ny, nz, t)) return true;
                 }
             }
 
-            // 推进
             if (tMaxX < tMaxY && tMaxX < tMaxZ) {
                 t = tMaxX; ix += stepX;
                 nx = -stepX; ny = 0; nz = 0;
@@ -180,56 +168,30 @@ public:
                 tMaxZ += tDeltaZ;
                 if (stepZ > 0 ? iz >= outZ : iz <= outZ) break;
             }
-
             if (t > maxDist) break;
         }
-
         return false;
     }
 
-    // 轻量遮挡查询 — 只返回 bool，不计算 hitPos/normal/dist
+    // DDA 体素 raycast — 返回 VoxelType + hitPos + normal
+    bool raycast(const Ray& ray, double maxDist,
+                 Vec3& hitPos, Vec3& normal, VoxelType& hitType,
+                 int maxSteps = 200) const {
+        return ddaWalk(ray, maxDist, maxSteps,
+            [&](int ix, int iy, int iz, int nx, int ny, int nz, double) -> bool {
+                hitPos = Vec3(double(ix) + 0.5, double(iy) + 0.5, double(iz) + 0.5);
+                normal = Vec3(double(nx), double(ny), double(nz));
+                hitType = data_[idx(ix, iy, iz)];
+                return true;
+            });
+    }
+
+    // 轻量遮挡查询 — 只返回 bool
     bool isOccluded(const Ray& ray, double maxDist, int maxSteps = 200) const {
-        double ox = ray.origin.x, oy = ray.origin.y, oz = ray.origin.z;
-        double dx = ray.dir.x, dy = ray.dir.y, dz = ray.dir.z;
-
-        int ix = int(std::floor(ox)), iy = int(std::floor(oy)), iz = int(std::floor(oz));
-        double tMaxX, tMaxY, tMaxZ, tDeltaX, tDeltaY, tDeltaZ;
-        int stepX, stepY, stepZ, outX, outY, outZ;
-
-        if (dx > 0) { stepX=1; outX=sx; tDeltaX=1.0/dx; tMaxX=(ix+1.0-ox)/dx; }
-        else if (dx < 0) { stepX=-1; outX=-1; tDeltaX=-1.0/dx; tMaxX=(ox-ix)/(-dx); }
-        else { stepX=0; outX=sx; tDeltaX=1e30; tMaxX=1e30; }
-
-        if (dy > 0) { stepY=1; outY=sy; tDeltaY=1.0/dy; tMaxY=(iy+1.0-oy)/dy; }
-        else if (dy < 0) { stepY=-1; outY=-1; tDeltaY=-1.0/dy; tMaxY=(oy-iy)/(-dy); }
-        else { stepY=0; outY=sy; tDeltaY=1e30; tMaxY=1e30; }
-
-        if (dz > 0) { stepZ=1; outZ=sz; tDeltaZ=1.0/dz; tMaxZ=(iz+1.0-oz)/dz; }
-        else if (dz < 0) { stepZ=-1; outZ=-1; tDeltaZ=-1.0/dz; tMaxZ=(oz-iz)/(-dz); }
-        else { stepZ=0; outZ=sz; tDeltaZ=1e30; tMaxZ=1e30; }
-
-        for (int s = 0; s < maxSteps; s++) {
-            if (ix >= 0 && ix < sx && iy >= 0 && iy < sy && iz >= 0 && iz < sz) {
-                if (isActive(data_[idx(ix, iy, iz)])) return true;
-            }
-            if (tMaxX < tMaxY && tMaxX < tMaxZ) {
-                double t = tMaxX; ix += stepX;
-                tMaxX += tDeltaX;
-                if (stepX > 0 ? ix >= outX : ix <= outX) break;
-                if (t > maxDist) break;
-            } else if (tMaxY < tMaxZ) {
-                double t = tMaxY; iy += stepY;
-                tMaxY += tDeltaY;
-                if (stepY > 0 ? iy >= outY : iy <= outY) break;
-                if (t > maxDist) break;
-            } else {
-                double t = tMaxZ; iz += stepZ;
-                tMaxZ += tDeltaZ;
-                if (stepZ > 0 ? iz >= outZ : iz <= outZ) break;
-                if (t > maxDist) break;
-            }
-        }
-        return false;
+        return ddaWalk(ray, maxDist, maxSteps,
+            [](int, int, int, int, int, int, double) -> bool {
+                return true;  // 发现第一个 active 就停
+            });
     }
 
 private:

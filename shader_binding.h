@@ -268,69 +268,7 @@ inline Vec3 SimpleSky(const Vec3& viewDir, const Vec3& sunDir) {
 } // namespace shader_atmosphere
 
 // ====================================================================
-// 5. SOFT SHADOW — PCSS-style for voxel ray traversal
-// ====================================================================
-namespace shader_shadow {
-using namespace shader_math;
-
-// Multiple-sample shadow with penumbra estimation
-// Returns shadow factor: 1.0 = fully lit, 0.0 = fully occluded
-inline double SoftShadowQuery(
-    const Vec3& pos, const Vec3& normal, const Vec3& toSun,
-    double maxDist, int numSamples, double lightRadius,
-    const class VoxelGrid* grid)
-{
-    // Penumbra estimation via blocker search
-    double blockerDist = 0.0;
-    int blockerCount = 0;
-    for (int i = 0; i < std::min(numSamples, 8); i++) {
-        // Jitter sample direction within cone
-        double theta = (i + 0.5) * TAU / 8.0;
-        double r = lightRadius * std::sqrt(double(i + 1) / 8.0);
-        Vec3 jitter(std::cos(theta) * r, 0.0, std::sin(theta) * r);
-        Vec3 sampleDir = (toSun + jitter).normalized();
-
-        Ray shadowRay(pos + normal * 1e-3, sampleDir);
-        Vec3 hitPos, hitNorm;
-        VoxelType hitType;
-        if (grid->raycast(shadowRay, maxDist, hitPos, hitNorm, hitType)) {
-            double d = (hitPos - pos).length();
-            blockerDist += d;
-            blockerCount++;
-        }
-    }
-
-    // No blockers → fully lit
-    if (blockerCount == 0) return 1.0;
-    blockerDist /= blockerCount;
-
-    // Penumbra width proportional to blocker distance & light size
-    double penumbra = (blockerDist / maxDist) * lightRadius * 10.0;
-    int pcfSamples = std::min(numSamples, 16);
-
-    // PCF with penumbra-sized filter
-    int hits = 0;
-    for (int i = 0; i < pcfSamples; i++) {
-        double theta = (i + 0.5) * TAU / pcfSamples;
-        double r = penumbra * std::sqrt(double(i + 1) / pcfSamples);
-        Vec3 jitter(std::cos(theta) * r, 0.0, std::sin(theta) * r);
-        Vec3 sampleDir = (toSun + jitter).normalized();
-
-        Ray shadowRay(pos + normal * 1e-3, sampleDir);
-        Vec3 hitPos, hitNorm;
-        VoxelType hitType;
-        if (!grid->raycast(shadowRay, maxDist, hitPos, hitNorm, hitType)) {
-            hits++;
-        }
-    }
-
-    return double(hits) / pcfSamples;
-}
-
-} // namespace shader_shadow
-
-// ====================================================================
-// 6. TONE MAPPING — port of rt_shaders/post/tonemap_aces.glsl
+// 5. TONE MAPPING — port of rt_shaders/post/tonemap_aces.glsl
 // ====================================================================
 namespace shader_tonemap {
 using namespace shader_math;

@@ -13,6 +13,7 @@ voxel_rt_gpu
 
 # Backup
 bak_*/
+patches/
 
 # Session data
 .dekacode/
