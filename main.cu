@@ -243,7 +243,7 @@ int main() {
 
         int spp, bounces;
         if (idleSec < 0.1) {
-            spp = 1; bounces = 1;
+            spp = 1; bounces = 0;
         } else if (idleSec < 0.5) {
             spp = 2; bounces = 1;
         } else if (idleSec < 2.0) {

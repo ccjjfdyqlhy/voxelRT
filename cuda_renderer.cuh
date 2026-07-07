@@ -352,7 +352,8 @@ __device__ inline cu_atmo::AtmoParams loadAtmo() {
     return p;
 }
 
-__global__ void renderKernel(CudaColor* output, int w, int h, int spp, int maxBounces) {
+__global__ void renderKernel(CudaColor* output, int w, int h, 
+                             int spp, int maxBounces) {
     int idx = blockIdx.x * blockDim.x + threadIdx.x;
     int idy = blockIdx.y * blockDim.y + threadIdx.y;
     if (idx >= w || idy >= h) return;
@@ -361,12 +362,10 @@ __global__ void renderKernel(CudaColor* output, int w, int h, int spp, int maxBo
     CudaRNG rng(seed);
 
     CudaColor accum(0, 0, 0);
-
     for (int s = 0; s < spp; s++) {
         double u = (idx + rng.next()) / w;
         double v = 1.0 - (idy + rng.next()) / h;
 
-        // Camera ray
         double rx = c_cam.llX + c_cam.hX * u + c_cam.vX * v - c_cam.posX;
         double ry = c_cam.llY + c_cam.hY * u + c_cam.vY * v - c_cam.posY;
         double rz = c_cam.llZ + c_cam.hZ * u + c_cam.vZ * v - c_cam.posZ;
@@ -381,12 +380,9 @@ __global__ void renderKernel(CudaColor* output, int w, int h, int spp, int maxBo
         accum = accum + c;
     }
 
-    // Accumulate → tone map → gamma
     accum = accum * (1.0 / spp);
     accum = accum * 1.5;
-    // Reinhard
-    accum = accum.mul((CudaVec3(1,1,1) + accum).rcp());
-    // gamma ≈ sqrt
+    accum = accum.mul((CudaVec3(1,1,1) + accum).rcp()); // Reinhard
     output[idy * w + idx] = CudaColor(sqrt(accum.x), sqrt(accum.y), sqrt(accum.z));
 }
 
