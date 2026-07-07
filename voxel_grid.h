@@ -71,6 +71,13 @@ public:
         return get(x, y, z) != VoxelType::Air;
     }
 
+    bool isSurfaceVoxel(int x, int y, int z) const {
+        if (!isSolid(x, y, z)) return false;
+        return !isSolid(x-1, y, z) || !isSolid(x+1, y, z) ||
+               !isSolid(x, y-1, z) || !isSolid(x, y+1, z) ||
+               !isSolid(x, y, z-1) || !isSolid(x, y, z+1);
+    }
+
     // 立方体填充
     void fillBox(int x0, int y0, int z0, int x1, int y1, int z1, VoxelType t) {
         for (int x = x0; x <= x1; x++)

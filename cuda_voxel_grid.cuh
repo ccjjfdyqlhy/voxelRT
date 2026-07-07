@@ -55,6 +55,13 @@ struct CudaVoxelGrid {
         return get(x, y, z) != CudaVoxelType::Air;
     }
 
+    __device__ bool isSurfaceVoxel(int x, int y, int z) const {
+        if (!isSolid(x, y, z)) return false;
+        return !isSolid(x-1, y, z) || !isSolid(x+1, y, z) ||
+               !isSolid(x, y-1, z) || !isSolid(x, y+1, z) ||
+               !isSolid(x, y, z-1) || !isSolid(x, y, z+1);
+    }
+
     // DDA 遍历核心模板 — 被 raycast & isOccluded 复用
     // 用 __ldg 走只读缓存, 减少全局内存延迟
     template<typename F>

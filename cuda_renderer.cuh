@@ -256,42 +256,12 @@ __device__ CudaColor cuTrace(double ox, double oy, double oz,
     // === Glass / Dielectric ===
     if (hitType == CudaVoxelType::Crystal) {
         if (depth >= maxDepth) return CudaColor(0, 0, 0);
-        double ior = 1.5;
-        CudaVec3 N(nx, ny, nz);
-        N = N.normalized();
-        CudaVec3 V(-dx, -dy, -dz);
-        V = V.normalized();
-
-        bool entering = N.dot(V) < 0;
-        CudaVec3 facingN = entering ? N : -N;
-        double cosTheta = fmax(0.0, -facingN.dot(V));
-        double eta = entering ? (1.0 / ior) : ior;
-        double R0 = (1.0 - ior) / (1.0 + ior);
-        R0 = R0 * R0;
-        double fresnel = R0 + (1.0 - R0) * pow5(1.0 - cosTheta);
-
-        CudaVec3 R = V - facingN * 2.0 * facingN.dot(V);
-        double eps = 1.0;
-
-        double k = 1.0 - eta * eta * (1.0 - cosTheta * cosTheta);
-        if (k < 0) {
-            double rx = hx + R.x * eps, ry = hy + R.y * eps, rz = hz + R.z * eps;
-            return cuTrace(rx, ry, rz, R.x, R.y, R.z,
-                           grid, sx, sy, sz, depth + 1, maxDepth, rng);
-        }
-
-        CudaVec3 T = V * eta + facingN * (eta * cosTheta - sqrt(k));
-        T = T.normalized();
-
-        if (rng.next() < fresnel) {
-            double rx = hx + R.x * eps, ry = hy + R.y * eps, rz = hz + R.z * eps;
-            return cuTrace(rx, ry, rz, R.x, R.y, R.z,
-                           grid, sx, sy, sz, depth + 1, maxDepth, rng) / fresnel;
-        } else {
-            double tx = hx + T.x * eps, ty = hy + T.y * eps, tz = hz + T.z * eps;
-            return cuTrace(tx, ty, tz, T.x, T.y, T.z,
-                           grid, sx, sy, sz, depth + 1, maxDepth, rng) / (1.0 - fresnel);
-        }
+        double eps = 0.1;
+        CudaColor white(0.85, 0.90, 0.95);
+        double rx = hx + dx * eps, ry = hy + dy * eps, rz = hz + dz * eps;
+        CudaColor bg = cuTrace(rx, ry, rz, dx, dy, dz,
+                                grid, sx, sy, sz, depth + 1, maxDepth, rng);
+        return bg * 0.6 + white * 0.4;
     }
 
     CudaVec3 N(nx, ny, nz);
