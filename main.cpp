@@ -154,6 +154,37 @@ void savePPM(const std::vector<Color>& pixels, int w, int h, const char* name) {
     }
 }
 
+// ============ 键名显示 ============
+
+static const char* keyName(KeySym ks) {
+    if (ks >= XK_a && ks <= XK_z) {
+        static char buf[2] = {};
+        buf[0] = 'A' + (ks - XK_a);
+        return buf;
+    }
+    if (ks >= XK_0 && ks <= XK_9) {
+        static char buf[2] = {};
+        buf[0] = '0' + (ks - XK_0);
+        return buf;
+    }
+    switch (ks) {
+        case XK_space: return "Space";
+        case XK_Shift_L: return "L-Shift";
+        case XK_Shift_R: return "R-Shift";
+        case XK_Control_L: return "L-Ctrl";
+        case XK_Control_R: return "R-Ctrl";
+        case XK_Escape: return "Esc";
+        case XK_Tab: return "Tab";
+        case XK_Return: return "Enter";
+        case XK_BackSpace: return "Back";
+        case XK_Up: return "上";
+        case XK_Down: return "下";
+        case XK_Left: return "左";
+        case XK_Right: return "右";
+        default: return "?";
+    }
+}
+
 // ============ 主循环 ============
 
 int main() {
@@ -217,12 +248,29 @@ int main() {
     WindowX11 win(WIN_W, WIN_H, "Voxel Ray Tracer");
     if (!win.isRunning()) return 0;
 
+    // === 图形选项 ===
+    float fov = 60.0f;
+    float mouseSens = 0.15f;
+    int fullSpp = 4;
+    int fullBounces = 2;
+
+    // === 键位配置 ===
+    enum Action {
+        ActForward, ActBackward, ActLeft, ActRight,
+        ActUp, ActDown, ActScreenshot, ActCount
+    };
+    static const char* actionNames[] = { "前进", "后退", "左移", "右移", "上升", "下降", "截图" };
+    KeySym actionKeys[ActCount] = { XK_w, XK_s, XK_a, XK_d, XK_space, XK_Shift_L, XK_p };
+    int waitingForAction = -1;
+
+    int menuPage = 0;
+
     // 相机 (初始在塔前方上空)
     Camera rtCam(Vec3(GRID_X/2.0 - 8, 12, GRID_Z/2.0 - 20),
-                 35, -12, 60, (double)RT_W / RT_H);
+                 35, -12, fov, (double)RT_W / RT_H);
 
     // 渲染器
-    Renderer fullRenderer(WIN_W, WIN_H, 4, 2);
+    Renderer fullRenderer(WIN_W, WIN_H, fullSpp, fullBounces);
     Renderer fastRenderer(RT_W, RT_H, 1, 0);  // 1spp, no bounce
 
     // 像素缓冲
@@ -241,7 +289,6 @@ int main() {
     bool frameSaved = false;  // auto-save first full frame
 
     const double MOVE_SPEED = 10.0;
-    const double MOUSE_SENS = 0.15;
 
     auto lastTime = Clock::now();
 
@@ -293,19 +340,19 @@ int main() {
         Vec3 rgt = rtCam.right();
 
         if (!menuActive) {
-            if (win.isKeyDown(XK_w))
+            if (win.isKeyDown(actionKeys[ActForward]))
                 moveDelta = moveDelta + Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
-            if (win.isKeyDown(XK_s))
+            if (win.isKeyDown(actionKeys[ActBackward]))
                 moveDelta = moveDelta - Vec3(fwd.x, 0, fwd.z).normalized() * MOVE_SPEED * dt;
-            if (win.isKeyDown(XK_a)) moveDelta = moveDelta - rgt * MOVE_SPEED * dt;
-            if (win.isKeyDown(XK_d)) moveDelta = moveDelta + rgt * MOVE_SPEED * dt;
-            if (win.isKeyDown(XK_space))   moveDelta = moveDelta + Vec3(0, MOVE_SPEED * dt, 0);
-            if (win.isShiftDown())         moveDelta = moveDelta - Vec3(0, MOVE_SPEED * dt, 0);
+            if (win.isKeyDown(actionKeys[ActLeft])) moveDelta = moveDelta - rgt * MOVE_SPEED * dt;
+            if (win.isKeyDown(actionKeys[ActRight])) moveDelta = moveDelta + rgt * MOVE_SPEED * dt;
+            if (win.isKeyDown(actionKeys[ActUp]))   moveDelta = moveDelta + Vec3(0, MOVE_SPEED * dt, 0);
+            if (win.isKeyDown(actionKeys[ActDown])) moveDelta = moveDelta - Vec3(0, MOVE_SPEED * dt, 0);
 
-            // P 键保存 PPM
-            static bool prevP = false;
-            bool nowP = win.isKeyDown(XK_p);
-            if (nowP && !prevP) {
+            // 截图键
+            static bool prevScreenshot = false;
+            bool nowScreenshot = win.isKeyDown(actionKeys[ActScreenshot]);
+            if (nowScreenshot && !prevScreenshot) {
                 std::vector<Color> saveBuf;
                 Camera saveCam(rtCam.position(), rtCam.yaw(), rtCam.pitch(),
                                60, (double)WIN_W / WIN_H);
@@ -314,7 +361,7 @@ int main() {
                 savePPM(saveBuf, WIN_W, WIN_H, "screenshot.ppm");
                 printf("Saved screenshot.ppm (%dx%d, 8spp)\n", WIN_W, WIN_H);
             }
-            prevP = nowP;
+            prevScreenshot = nowScreenshot;
 
             if (moveDelta.length() > 1e-6) {
                 rtCam.move(moveDelta);
@@ -325,7 +372,7 @@ int main() {
             int mdx = win.mouseDX();
             int mdy = win.mouseDY();
             if (mdx != 0 || mdy != 0) {
-                rtCam.rotate(mdx * MOUSE_SENS, -mdy * MOUSE_SENS);
+                rtCam.rotate(mdx * mouseSens, -mdy * mouseSens);
                 cameraMoved = true;
                 lastMoveTime = Clock::now();
             }
@@ -342,7 +389,7 @@ int main() {
 
             if (doFull) {
                 Camera fullCam(rtCam.position(), rtCam.yaw(), rtCam.pitch(),
-                               60, (double)WIN_W / WIN_H);
+                               fov, (double)WIN_W / WIN_H);
                 fullRenderer.render(fullCam, grid, fullBuf);
                 bilinearUpscale(fullBuf, WIN_W, WIN_H,
                                 (unsigned char*)win.framebuffer(), WIN_W, WIN_H);
@@ -367,36 +414,118 @@ int main() {
         ImGui::NewFrame();
 
         if (menuActive) {
+            // 键位绑定等待检测
+            if (waitingForAction >= 0) {
+                KeySym ks = win.lastKeyPressed();
+                if (ks != 0) {
+                    if (ks == XK_Escape) {
+                        waitingForAction = -1;
+                    } else {
+                        actionKeys[waitingForAction] = ks;
+                        waitingForAction = -1;
+                    }
+                }
+            }
+
             ImGui::SetNextWindowPos(ImVec2(WIN_W * 0.5f, WIN_H * 0.5f), ImGuiCond_Always, ImVec2(0.5f, 0.5f));
-            ImGui::SetNextWindowSize(ImVec2(360, 320), ImGuiCond_Always);
+            int winH = menuPage == 0 ? 320 : (menuPage == 1 ? 380 : 420);
+            ImGui::SetNextWindowSize(ImVec2(360, winH), ImGuiCond_Always);
             ImGui::Begin("暂停", nullptr,
                          ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoResize |
                          ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoTitleBar);
 
             float winW = ImGui::GetWindowWidth();
-            ImGui::SetCursorPosX((winW - 100) * 0.5f);
-            ImGui::Text("=== 菜单 ===");
-            ImGui::Spacing(); ImGui::Spacing(); ImGui::Spacing();
-
             float btnW = 200;
-            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
-            if (ImGui::Button("回到场景", ImVec2(btnW, 40))) {
-                menuActive = false;
-                ImGui_ImplX11_SetMenuActive(false);
-                win.grabMouse();
-            }
-            ImGui::Spacing();
-            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
-            if (ImGui::Button("图形选项", ImVec2(btnW, 40))) {
-            }
-            ImGui::Spacing();
-            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
-            if (ImGui::Button("键位配置", ImVec2(btnW, 40))) {
-            }
-            ImGui::Spacing();
-            ImGui::SetCursorPosX((winW - btnW) * 0.5f);
-            if (ImGui::Button("退出", ImVec2(btnW, 40))) {
-                quitRequested = true;
+
+            if (menuPage == 0) {
+                ImGui::SetCursorPosX((winW - 100) * 0.5f);
+                ImGui::Text("=== 菜单 ===");
+                ImGui::Spacing(); ImGui::Spacing(); ImGui::Spacing();
+
+                ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+                if (ImGui::Button("回到场景", ImVec2(btnW, 40))) {
+                    menuActive = false;
+                    menuPage = 0;
+                    ImGui_ImplX11_SetMenuActive(false);
+                    win.grabMouse();
+                }
+                ImGui::Spacing();
+                ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+                if (ImGui::Button("图形选项", ImVec2(btnW, 40))) {
+                    menuPage = 1;
+                }
+                ImGui::Spacing();
+                ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+                if (ImGui::Button("键位配置", ImVec2(btnW, 40))) {
+                    menuPage = 2;
+                }
+                ImGui::Spacing();
+                ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+                if (ImGui::Button("退出", ImVec2(btnW, 40))) {
+                    quitRequested = true;
+                }
+            } else if (menuPage == 1) {
+                ImGui::SetCursorPosX((winW - 100) * 0.5f);
+                ImGui::Text("=== 图形选项 ===");
+                ImGui::Spacing(); ImGui::Spacing();
+
+                ImGui::SetCursorPosX(20);
+                ImGui::SetNextItemWidth(winW - 40);
+                if (ImGui::SliderFloat("视野 (FOV)", &fov, 30, 120, "%.0f°")) {
+                    rtCam.setFov(fov);
+                }
+
+                ImGui::SetCursorPosX(20);
+                ImGui::SetNextItemWidth(winW - 40);
+                ImGui::SliderFloat("鼠标灵敏度", &mouseSens, 0.05f, 0.50f, "%.2f");
+
+                ImGui::SetCursorPosX(20);
+                ImGui::SetNextItemWidth(winW - 40);
+                if (ImGui::SliderInt("采样数 (SPP)", &fullSpp, 1, 8)) {
+                    fullRenderer.setSamples(fullSpp);
+                }
+
+                ImGui::SetCursorPosX(20);
+                ImGui::SetNextItemWidth(winW - 40);
+                if (ImGui::SliderInt("最大弹射次数", &fullBounces, 0, 4)) {
+                    fullRenderer.setMaxBounces(fullBounces);
+                }
+
+                ImGui::Spacing(); ImGui::Spacing();
+                ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+                if (ImGui::Button("返回", ImVec2(btnW, 40))) {
+                    menuPage = 0;
+                }
+            } else if (menuPage == 2) {
+                ImGui::SetCursorPosX((winW - 100) * 0.5f);
+                ImGui::Text("=== 键位配置 ===");
+                ImGui::Spacing();
+
+                for (int i = 0; i < ActCount; i++) {
+                    ImGui::SetCursorPosX(20);
+                    ImGui::Text("%s:", actionNames[i]);
+                    ImGui::SameLine();
+                    ImGui::SetCursorPosX(winW - 150);
+
+                    char label[64];
+                    if (waitingForAction == i) {
+                        std::snprintf(label, sizeof(label), "...");
+                    } else {
+                        std::snprintf(label, sizeof(label), "%s", keyName(actionKeys[i]));
+                    }
+                    ImGui::PushID(i);
+                    if (ImGui::Button(label, ImVec2(120, 30))) {
+                        waitingForAction = i;
+                    }
+                    ImGui::PopID();
+                }
+
+                ImGui::Spacing(); ImGui::Spacing();
+                ImGui::SetCursorPosX((winW - btnW) * 0.5f);
+                if (ImGui::Button("返回", ImVec2(btnW, 40))) {
+                    waitingForAction = -1;
+                    menuPage = 0;
+                }
             }
 
             ImGui::End();

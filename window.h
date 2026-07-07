@@ -84,10 +84,15 @@ public:
     void processEvents() {
         mouseDX_ = 0;
         mouseDY_ = 0;
+        lastKeyPressed_ = 0;
 
         while (XPending(display_)) {
             XEvent ev;
             XNextEvent(display_, &ev);
+
+            if (ev.type == KeyPress) {
+                lastKeyPressed_ = XLookupKeysym(&ev.xkey, 0);
+            }
 
             if (eventCallback_ && eventCallback_(&ev))
                 continue;
@@ -170,6 +175,7 @@ public:
     int mouseDX() const { return mouseDX_; }
     int mouseDY() const { return mouseDY_; }
     bool isMouseGrabbed() const { return mouseGrabbed_; }
+    KeySym lastKeyPressed() const { return lastKeyPressed_; }
 
     void setTitle(const char* title) {
         XStoreName(display_, win_, title);
@@ -203,6 +209,21 @@ public:
         if (mouseGrabbed_) {
             XUngrabPointer(display_, CurrentTime);
             mouseGrabbed_ = false;
+        }
+    }
+
+    void grabMouse() {
+        if (!mouseGrabbed_) {
+            if (XGrabPointer(display_, win_, True, ButtonPressMask | PointerMotionMask,
+                             GrabModeAsync, GrabModeAsync, win_, None, CurrentTime) ==
+                GrabSuccess) {
+                XWarpPointer(display_, None, win_, 0, 0, 0, 0, width_/2, height_/2);
+                XSelectInput(display_, win_,
+                             ExposureMask | KeyPressMask | KeyReleaseMask |
+                             ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
+                             StructureNotifyMask);
+                mouseGrabbed_ = true;
+            }
         }
     }
 
@@ -253,21 +274,6 @@ private:
         createShmImage(w, h);
     }
 
-    void grabMouse() {
-        if (!mouseGrabbed_) {
-            if (XGrabPointer(display_, win_, True, ButtonPressMask | PointerMotionMask,
-                             GrabModeAsync, GrabModeAsync, win_, None, CurrentTime) ==
-                GrabSuccess) {
-                XWarpPointer(display_, None, win_, 0, 0, 0, 0, width_/2, height_/2);
-                XSelectInput(display_, win_,
-                             ExposureMask | KeyPressMask | KeyReleaseMask |
-                             ButtonPressMask | ButtonReleaseMask | PointerMotionMask |
-                             StructureNotifyMask);
-                mouseGrabbed_ = true;
-            }
-        }
-    }
-
     Display* display_ = nullptr;
     Window win_ = 0;
     GC gc_ = nullptr;
@@ -284,6 +290,7 @@ private:
     bool shiftPressed_ = false;
     int mouseDX_, mouseDY_;
     bool mouseGrabbed_;
+    KeySym lastKeyPressed_ = 0;
     bool autoGrab_ = true;
     EventCallback eventCallback_ = nullptr;
 };

@@ -45,6 +45,9 @@ public:
     Renderer(int width, int height, int samples = 4, int maxBounces = 4)
         : w_(width), h_(height), samples_(samples), maxBounces_(maxBounces) {}
 
+    void setSamples(int s) { samples_ = s; }
+    void setMaxBounces(int b) { maxBounces_ = b; }
+
     void render(const Camera& cam, const VoxelGrid& grid, std::vector<Color>& pixels) {
         pixels.resize(w_ * h_);
 
