@@ -75,6 +75,12 @@ void buildScene(VoxelGrid& grid) {
                                  rng.next() > 0.5 ? VoxelType::Brick : VoxelType::Dirt);
     }
 
+    // 玻璃方块 (塔前)
+    for (int y = 0; y < 4; y++)
+        for (int x = -2; x <= 1; x++)
+            for (int z = -3; z <= -1; z++)
+                grid.set(cx + x + 6, y + 3, cz + z, VoxelType::Crystal);
+
     int wx = grid.dimX() / 2 - 2;
     int wz = grid.dimZ() / 2 - 2;
     for (int x = -wx; x < wx; x++)

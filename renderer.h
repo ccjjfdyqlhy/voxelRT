@@ -145,6 +145,39 @@ private:
             return emitColor;
         }
 
+        // === Glass / Dielectric ===
+        if (hit.type == VoxelType::Crystal) {
+            if (depth >= maxBounces_) return Color(0, 0, 0);
+            double ior = 1.5;
+            Vec3 N = hit.normal.normalized();
+            Vec3 V = (-ray.dir).normalized();
+
+            bool entering = N.dot(V) < 0;
+            Vec3 facingN = entering ? N : -N;
+            double cosTheta = std::max(0.0, -facingN.dot(V));
+            double eta = entering ? (1.0 / ior) : ior;
+            double R0 = (1.0 - ior) / (1.0 + ior);
+            R0 = R0 * R0;
+            double fresnel = R0 + (1.0 - R0) * std::pow(1.0 - cosTheta, 5.0);
+
+            Vec3 R = V - facingN * 2.0 * facingN.dot(V);
+            double eps = 1.0;
+
+            double k = 1.0 - eta * eta * (1.0 - cosTheta * cosTheta);
+            if (k < 0) {
+                return trace(Ray(hit.pos + R * eps, R), grid, sunDir, depth + 1, rng, atmoParams);
+            }
+
+            Vec3 T = V * eta + facingN * (eta * cosTheta - std::sqrt(k));
+            T = T.normalized();
+
+            if (rng.next() < fresnel) {
+                return trace(Ray(hit.pos + R * eps, R), grid, sunDir, depth + 1, rng, atmoParams) / fresnel;
+            } else {
+                return trace(Ray(hit.pos + T * eps, T), grid, sunDir, depth + 1, rng, atmoParams) / (1.0 - fresnel);
+            }
+        }
+
         Vec3 N = hit.normal.normalized();
         Vec3 V = (-ray.dir).normalized();
         Vec3 toSun = -sunDir;  // direction from hit point towards sun

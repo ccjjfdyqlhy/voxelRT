@@ -6,7 +6,7 @@
 #include "cuda_vec3.cuh"
 
 enum class CudaVoxelType : uint8_t {
-    Air = 0, Stone, Dirt, Grass, Wood, Leaf, Sand, Water, Brick, Metal, GlowStone
+    Air = 0, Stone, Dirt, Grass, Wood, Leaf, Sand, Water, Brick, Metal, GlowStone, Crystal
 };
 
 __host__ __device__ inline bool cuIsActive(CudaVoxelType t) { return t != CudaVoxelType::Air; }
@@ -24,7 +24,8 @@ __host__ __device__ inline CudaColor cuVoxelColor(CudaVoxelType t) {
         case CudaVoxelType::Brick:    return {0.70, 0.25, 0.20};
         case CudaVoxelType::Metal:    return {0.65, 0.65, 0.75};
         case CudaVoxelType::GlowStone:return {1.00, 0.80, 0.30};
-        default:                      return {1.00, 0.00, 1.00};
+        case CudaVoxelType::Crystal:  return {0.85, 0.90, 0.95};
+        default:                  return {1.00, 0.00, 1.00};
     }
 }
 

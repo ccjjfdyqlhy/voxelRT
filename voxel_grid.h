@@ -10,7 +10,7 @@
 
 // === 体素类型 ===
 enum class VoxelType : uint8_t {
-    Air = 0, Stone, Dirt, Grass, Wood, Leaf, Sand, Water, Brick, Metal, GlowStone
+    Air = 0, Stone, Dirt, Grass, Wood, Leaf, Sand, Water, Brick, Metal, GlowStone, Crystal
 };
 
 inline bool isActive(VoxelType t) { return t != VoxelType::Air; }
@@ -29,6 +29,7 @@ inline Color voxelColor(VoxelType t) {
         case VoxelType::Brick:    return {0.70, 0.25, 0.20};
         case VoxelType::Metal:    return {0.65, 0.65, 0.75};
         case VoxelType::GlowStone:return {1.00, 0.80, 0.30};
+        case VoxelType::Crystal:  return {0.85, 0.90, 0.95};
         default:                  return {1.00, 0.00, 1.00};
     }
 }
