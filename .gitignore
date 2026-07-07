@@ -1,0 +1,19 @@
+# Build artifacts
+voxel_rt
+voxel_rt_gpu
+*.o
+
+# Output images
+*.ppm
+*.png
+
+# IDE
+.vscode/
+.idea/
+
+# Backup
+bak_*/
+
+# Session data
+.dekacode/
+
